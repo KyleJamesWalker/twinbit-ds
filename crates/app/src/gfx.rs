@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::num::NonZeroU32;
 
-use glutin::config::{Config, ConfigTemplateBuilder};
+use glutin::config::{Config, ConfigTemplateBuilder, GlConfig};
 use glutin::context::{ContextApi, ContextAttributesBuilder, GlProfile, NotCurrentGlContext, PossiblyCurrentContext, PossiblyCurrentGlContext, Version};
 use glutin::display::{GetGlDisplay, GlDisplay};
 use glutin::surface::{GlSurface, Surface, SwapInterval, WindowSurface};
@@ -13,6 +13,7 @@ use winit::dpi::{LogicalPosition, LogicalSize, PhysicalSize};
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{Fullscreen, Window, WindowAttributes, WindowId};
 
+const MAX_SAMPLES: u8 = 4;
 const PROFILE: Profile = if cfg!(target_os = "linux") { Profile::Gles } else { Profile::Desktop };
 
 pub struct Screen {
@@ -40,13 +41,18 @@ pub struct Gfx {
 impl Gfx {
     pub fn new(el: &ActiveEventLoop) -> Result<Self, Box<dyn Error>> {
         let (top_attrs, bottom_attrs) = window_attrs(el);
-        let mut template = ConfigTemplateBuilder::new();
+        let mut template = ConfigTemplateBuilder::new().with_depth_size(24);
         if PROFILE == Profile::Gles {
             template = template.with_api(glutin::config::Api::GLES3);
         }
         let (top_window, config) = DisplayBuilder::new()
             .with_window_attributes(Some(top_attrs))
-            .build(el, template, |mut configs| configs.next().expect("no GL config"))?;
+            .build(el, template, |configs| {
+                configs
+                    .max_by_key(|c| (c.depth_size().min(24), c.num_samples().min(MAX_SAMPLES), std::cmp::Reverse(c.num_samples())))
+                    .expect("no GL config")
+            })?;
+        eprintln!("gl config: depth {} bits, {} samples", config.depth_size(), config.num_samples());
         let top_window = top_window.ok_or("display builder made no window")?;
         let bottom_window = glutin_winit::finalize_window(el, bottom_attrs, &config)?;
 

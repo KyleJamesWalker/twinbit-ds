@@ -1,3 +1,4 @@
+mod dice;
 mod draw;
 mod font;
 mod input;
@@ -5,6 +6,7 @@ mod micro;
 mod osd;
 mod particles;
 mod rng;
+pub mod scene3d;
 mod sfx;
 
 pub use draw::{Canvas, Color, Frame, Shape};
@@ -26,6 +28,7 @@ const INTRO: f32 = 0.9;
 const OUTRO: f32 = 0.9;
 const RUMBLE_MISS: f32 = 0.35;
 const RUMBLE_NICE: f32 = 0.12;
+const RUMBLE_CLACK: f32 = 0.05;
 const VOLUME_MAX: u8 = 10;
 const VOLUME_SHOWN: f32 = 1.2;
 const SPEAKER_SHOWN: f32 = 0.6;
@@ -37,6 +40,7 @@ enum State {
     Play { t: f32, game: Box<dyn Microgame> },
     Outro { t: f32, won: bool },
     GameOver { t: f32 },
+    Dice(Box<dice::Dice>),
 }
 
 pub struct Game {
@@ -93,6 +97,15 @@ impl Game {
         self.rumble > 0.0
     }
 
+    /// Jumps straight to the 3D dice scene.
+    pub fn open_dice(&mut self) {
+        self.state = self.dice();
+    }
+
+    fn dice(&mut self) -> State {
+        State::Dice(Box::new(dice::Dice::new(&mut self.rng)))
+    }
+
     /// Sounds queued since the last call.
     pub fn take_sounds(&mut self) -> Vec<Sfx> {
         std::mem::take(&mut self.sounds)
@@ -131,6 +144,7 @@ impl Game {
         }
         let start = input.pressed.any(Buttons::START | Buttons::A) || input.touch_started;
         self.state = match std::mem::replace(&mut self.state, State::Title) {
+            State::Title if input.pressed.any(Buttons::Y) => self.dice(),
             State::Title if start => {
                 self.sounds.push(Sfx::Start);
                 self.score = 0;
@@ -184,6 +198,12 @@ impl Game {
             State::Outro { t, won } => State::Outro { t: t + dt, won },
             State::GameOver { t } if t > 1.0 && start => State::Title,
             State::GameOver { t } => State::GameOver { t: t + dt },
+            State::Dice(mut dice) => {
+                if dice.update(input, dt, &mut self.sounds).rumble {
+                    self.rumble = self.rumble.max(RUMBLE_CLACK);
+                }
+                State::Dice(dice)
+            }
         };
     }
 
@@ -195,8 +215,8 @@ impl Game {
             State::Title => {
                 f.top.text_centered(280.0, 32.0, WHITE, "TWINBIT");
                 f.bottom.text_centered(340.0, 12.0, WHITE, "TAP OR PRESS START");
-                f.bottom.text_centered(440.0, 6.0, [1.0, 1.0, 1.0, 0.5], "L1 R1: SPEAKERS   R2: RUMBLE");
-                f.bottom.text_centered(490.0, 6.0, [1.0, 1.0, 1.0, 0.5], "HOLD HOME: QUIT");
+                f.bottom.text_centered(440.0, 6.0, [1.0, 1.0, 1.0, 0.5], "Y: 3D DICE   L1 R1: SPEAKERS");
+                f.bottom.text_centered(490.0, 6.0, [1.0, 1.0, 1.0, 0.5], "R2: RUMBLE   HOLD HOME: QUIT");
                 if let Some((side, _)) = self.speaker {
                     let label = if side == Sfx::Left { "LEFT" } else { "RIGHT" };
                     let x = if side == Sfx::Left { 60.0 } else { SCREEN_W - 60.0 - font::width(label) * 12.0 };
@@ -221,6 +241,7 @@ impl Game {
                 f.top.text_centered(280.0, 24.0, WHITE, "GAME OVER");
                 self.hud(&mut f.bottom);
             }
+            State::Dice(dice) => dice.draw(&mut f),
         }
         if self.paused {
             f.top.text_centered(360.0, 16.0, WHITE, "PAUSED");
@@ -275,6 +296,15 @@ mod tests {
         }
         assert_eq!(game.volume(), 1.0);
         assert!(game.take_sounds().iter().all(|s| matches!(s, Sfx::Tick(_))));
+    }
+
+    #[test]
+    fn y_on_the_title_opens_the_dice_and_back_returns() {
+        let mut game = Game::new(1);
+        game.update(&Input { pressed: Buttons::Y, ..Default::default() }, 0.016);
+        assert!(matches!(game.state, State::Dice(_)));
+        game.update(&Input { pressed: Buttons::BACK, ..Default::default() }, 0.016);
+        assert!(matches!(game.state, State::Title));
     }
 
     #[test]

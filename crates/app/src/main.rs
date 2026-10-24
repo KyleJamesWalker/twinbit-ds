@@ -42,8 +42,12 @@ struct App {
 impl App {
     fn new() -> Self {
         let seed = SystemTime::now().duration_since(UNIX_EPOCH).map_or(1, |d| d.as_nanos() as u64);
+        let mut game = Game::new(seed);
+        if std::env::var("TWINBIT_START").as_deref() == Ok("dice") {
+            game.open_dice();
+        }
         Self {
-            game: Game::new(seed),
+            game,
             tracker: InputTracker::default(),
             gfx: None,
             mic: mic::Mic::open().inspect_err(|e| eprintln!("mic disabled: {e}")).ok(),

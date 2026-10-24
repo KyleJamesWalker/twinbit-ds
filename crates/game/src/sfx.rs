@@ -14,4 +14,6 @@ pub enum Sfx {
     Nice,
     Miss,
     GameOver,
+    /// Die hitting the tray; louder for a harder hit.
+    Clack(u8),
 }

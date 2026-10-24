@@ -58,6 +58,10 @@ fn notes(sfx: Sfx) -> Vec<Note> {
         Sfx::Hit => vec![note(0.0, 0.3, 1.0, 1.0, Noise, 0.9), note(0.0, 0.3, 220.0, 55.0, Square, 0.7)],
         Sfx::Nice => arpeggio(&[659.0, 784.0, 1047.0], 0.08, Square),
         Sfx::Miss => vec![note(0.0, 0.35, 392.0, 147.0, Square, 0.8)],
+        Sfx::Clack(force) => {
+            let g = (force as f32 / 60.0).clamp(0.25, 1.0);
+            vec![note(0.0, 0.05, 1.0, 1.0, Noise, g), note(0.0, 0.06, 900.0, 500.0, Triangle, g * 0.6)]
+        }
         Sfx::GameOver => arpeggio(&[523.0, 392.0, 330.0, 262.0], 0.16, Triangle),
     }
 }

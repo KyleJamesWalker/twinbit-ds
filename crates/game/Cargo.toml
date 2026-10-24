@@ -3,3 +3,6 @@ name = "twinbit-game"
 edition.workspace = true
 version.workspace = true
 publish.workspace = true
+
+[dependencies]
+glam = "0.30"

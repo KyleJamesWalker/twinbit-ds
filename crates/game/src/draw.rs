@@ -1,3 +1,4 @@
+use crate::scene3d::Scene3d;
 use crate::{BOTTOM_OFFSET, SCREEN_H, SCREEN_W, font};
 
 pub type Color = [f32; 4];
@@ -11,6 +12,8 @@ pub enum Shape {
 #[derive(Clone, Debug, Default)]
 pub struct Canvas {
     pub clear: Color,
+    /// Drawn first, under the 2D shapes.
+    pub scene: Option<Scene3d>,
     pub shapes: Vec<Shape>,
 }
 
