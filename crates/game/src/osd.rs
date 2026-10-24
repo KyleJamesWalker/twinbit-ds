@@ -26,13 +26,13 @@ const LABELS: [(&str, Buttons); 19] = [
 
 const SCALE: f32 = 4.0;
 const PAD: f32 = 4.0;
-const GAP: f32 = 6.0;
+const GAP: f32 = 5.0;
 const ON: [f32; 4] = [1.0, 0.85, 0.2, 1.0];
 const OFF: [f32; 4] = [1.0, 1.0, 1.0, 0.25];
 
-pub fn draw(c: &mut Canvas, input: &Input, rumble: bool) {
+pub fn draw(c: &mut Canvas, input: &Input, rumble: bool, headphones: bool) {
     let (held, lid_closed) = (input.held, input.lid_closed);
-    let chips = LABELS.iter().map(|&(l, b)| (l, held.contains(b))).chain([("LID", lid_closed), ("RUMBLE", rumble)]);
+    let chips = LABELS.iter().map(|&(l, b)| (l, held.contains(b))).chain([("LID", lid_closed), ("RUMBLE", rumble), ("HP", headphones)]);
     let width = |l: &str| font::width(l) * SCALE + 2.0 * PAD;
     let total: f32 = chips.clone().map(|(l, _)| width(l) + GAP).sum::<f32>() - GAP;
     let h = 5.0 * SCALE + 2.0 * PAD;

@@ -4,10 +4,11 @@ mod debug;
 mod device;
 mod gfx;
 mod mic;
+mod persist;
 
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use twinbit_game::{Buttons, Game, InputTracker, MAX_TOUCHES, RawInput, SCREEN_H, SCREEN_W};
+use twinbit_game::{Buttons, Game, InputTracker, MAX_TOUCHES, RawInput, SCREEN_H, SCREEN_W, Scene, System};
 use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, MouseButton, TouchPhase, WindowEvent};
@@ -19,6 +20,16 @@ const QUIT_HOLD: f32 = 1.0;
 /// The press that wakes the device arrives after resume and must not suspend it again.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 const WAKE_GRACE: Duration = Duration::from_secs(2);
+const STATS_WINDOW: Duration = Duration::from_secs(1);
+
+/// Frame timing over the last window, plus sensors read once per window.
+#[derive(Default)]
+struct Stats {
+    frames: u32,
+    total_ms: f32,
+    worst_ms: f32,
+    since: Option<Instant>,
+}
 
 struct App {
     game: Game,
@@ -40,14 +51,19 @@ struct App {
     woke: Instant,
     debug: Option<std::sync::mpsc::Receiver<debug::Command>>,
     injector: debug::Injector,
+    saver: persist::Saver,
+    stats: Stats,
+    system: System,
 }
 
 impl App {
     fn new() -> Self {
         let seed = SystemTime::now().duration_since(UNIX_EPOCH).map_or(1, |d| d.as_nanos() as u64);
         let mut game = Game::new(seed);
-        if std::env::var("TWINBIT_START").as_deref() == Ok("dice") {
-            game.open_dice();
+        let (saver, save) = persist::Saver::load();
+        game.load(save);
+        if let Some(scene) = std::env::var("TWINBIT_START").ok().and_then(|s| Scene::from_name(&s)) {
+            game.open(scene);
         }
         Self {
             game,
@@ -68,6 +84,9 @@ impl App {
             woke: Instant::now(),
             debug: debug::listen(),
             injector: debug::Injector::default(),
+            saver,
+            stats: Stats::default(),
+            system: System::default(),
         }
     }
 
@@ -95,18 +114,66 @@ impl App {
         raw
     }
 
+    /// Folds one frame into the stats and refreshes the system report once per window.
+    fn measure(&mut self, frame: Duration) {
+        let ms = frame.as_secs_f32() * 1000.0;
+        let s = &mut self.stats;
+        s.frames += 1;
+        s.total_ms += ms;
+        s.worst_ms = s.worst_ms.max(ms);
+        let since = *s.since.get_or_insert_with(Instant::now);
+        if since.elapsed() < STATS_WINDOW {
+            return;
+        }
+        self.system.fps = s.frames as f32 / since.elapsed().as_secs_f32();
+        self.system.frame_ms = s.total_ms / s.frames as f32;
+        self.system.worst_ms = s.worst_ms;
+        *s = Stats { since: Some(Instant::now()), ..Default::default() };
+        if self.debug.is_some() {
+            let sys = &self.system;
+            eprintln!("perf: fps={:.1} ms={:.1} worst={:.1} {}", sys.fps, sys.frame_ms, sys.worst_ms, self.game.summary());
+        }
+        #[cfg(target_os = "linux")]
+        if let Some(dev) = &self.device {
+            self.system.soc_c = dev.temperature("soc-thermal");
+            self.system.gpu_c = dev.temperature("gpu-thermal");
+            self.system.battery = dev.battery();
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn suspend(&mut self, wake_after: Option<u32>) {
+        self.saver.update(self.game.save(), true);
+        if let Some(dev) = &mut self.device {
+            dev.suspend(wake_after);
+            eprintln!("resumed");
+        }
+        self.last = Instant::now();
+        self.woke = self.last;
+        self.stats = Stats::default();
+    }
+
     fn tick(&mut self, el: &ActiveEventLoop) {
         let now = Instant::now();
-        let dt = (now - self.last).as_secs_f32().min(0.05);
+        let frame = now - self.last;
+        let dt = frame.as_secs_f32().min(0.05);
         self.last = now;
+        self.measure(frame);
         let mut shot = None;
         for cmd in self.debug.iter().flat_map(|rx| rx.try_iter()).collect::<Vec<_>>() {
             match cmd {
                 debug::Command::Press(b, secs) => self.injector.press(b, secs),
                 debug::Command::Touch(keys) => self.injector.touch(keys),
-                debug::Command::Scene(name) if name == "dice" => self.game.open_dice(),
-                debug::Command::Scene(name) => eprintln!("debug: unknown scene {name}"),
+                debug::Command::Scene(name) => match Scene::from_name(&name) {
+                    Some(scene) => self.game.open(scene),
+                    None => eprintln!("debug: unknown scene {name}"),
+                },
                 debug::Command::Shot(path) => shot = Some(path),
+                #[cfg(target_os = "linux")]
+                debug::Command::Sleep(secs) => return self.suspend(Some(secs)),
+                #[cfg(not(target_os = "linux"))]
+                debug::Command::Sleep(secs) => eprintln!("debug: sleep {secs} needs the device"),
+                debug::Command::Panic => panic!("debug: panic requested"),
             }
         }
         let mut raw = self.raw_input();
@@ -124,14 +191,17 @@ impl App {
         #[cfg(target_os = "linux")]
         if input.pressed.contains(Buttons::POWER)
             && self.woke.elapsed() > WAKE_GRACE
-            && let Some(dev) = &mut self.device
+            && self.device.is_some()
         {
-            dev.suspend();
-            self.last = Instant::now();
-            self.woke = self.last;
-            return;
+            return self.suspend(None);
         }
+        #[cfg(target_os = "linux")]
+        if let Some(dev) = &self.device {
+            self.system.headphones = dev.headphones();
+        }
+        self.game.set_system(self.system);
         self.game.update(&input, dt);
+        self.saver.update(self.game.save(), false);
         let sounds = self.game.take_sounds();
         if let Some(audio) = &self.audio {
             audio.set_volume(self.game.volume());
@@ -139,7 +209,7 @@ impl App {
         }
         #[cfg(target_os = "linux")]
         if let Some(dev) = &mut self.device {
-            dev.set_rumble(self.game.rumble());
+            dev.apply(&self.game.outputs());
         }
         if let Some(gfx) = &mut self.gfx {
             match gfx.render(&self.game.draw(), shot.is_some()) {
@@ -253,6 +323,10 @@ impl ApplicationHandler for App {
         }
     }
 
+    fn exiting(&mut self, _el: &ActiveEventLoop) {
+        self.saver.update(self.game.save(), true);
+    }
+
     fn about_to_wait(&mut self, _el: &ActiveEventLoop) {
         if let Some(g) = &self.gfx {
             g.top.window.request_redraw();
@@ -261,6 +335,7 @@ impl ApplicationHandler for App {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    persist::install_crash_log();
     let event_loop = EventLoop::new()?;
     event_loop.run_app(&mut App::new())?;
     Ok(())

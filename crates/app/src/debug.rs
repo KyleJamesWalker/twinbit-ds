@@ -4,7 +4,9 @@
 //! press <button> [ms]          hold a button (a b x y l1 r1 l2 r2 start select home back up down left right volup voldown)
 //! tap <x> <y>                  touch the bottom screen at screen pixels
 //! swipe <x1> <y1> <x2> <y2> [ms]
-//! scene dice                   jump to a scene
+//! scene <name>                 jump to a scene: micro, dice, stress, hardware
+//! sleep <secs>                 suspend, waking on the RTC alarm
+//! panic                        crash on purpose to test the crash log
 //! shot <path>                  save both screens, top above bottom, as one PNG
 //! ```
 
@@ -25,6 +27,8 @@ pub enum Command {
     Touch(Vec<(f32, Option<[f32; 2]>)>),
     Scene(String),
     Shot(PathBuf),
+    Sleep(u32),
+    Panic,
 }
 
 pub fn listen() -> Option<Receiver<Command>> {
@@ -78,6 +82,8 @@ fn parse(line: &str) -> Option<Command> {
         }
         "scene" => Command::Scene(words.get(1)?.to_string()),
         "shot" => Command::Shot(PathBuf::from(words.get(1)?)),
+        "sleep" => Command::Sleep(num(1)? as u32),
+        "panic" => Command::Panic,
         _ => return None,
     })
 }
