@@ -4,7 +4,16 @@ A Rust tech demo for the ANBERNIC RG DS Plus. It is a test project, not a finish
 
 ## Overview
 
-The demo is a short run of dual-screen microgames, a 3D dice tray with rigid body physics, and a live button tester. Together they use both screens, multi-touch, the microphone, every button and the stick. They also use both speakers, the vibration motor, the lid sensor and the power button. The same code also builds and runs on macOS for quick iteration.
+The title menu opens four scenes:
+
+| Scene | What it exercises |
+|---|---|
+| Microgames | Touch, the microphone, the d-pad and stick, sprites that cross the hinge, particles |
+| 3D dice | Lit 3D meshes on both screens, rigid body physics, swipe input, rumble on impact |
+| Stress test | Sprite throughput per screen, to find where 60 FPS breaks |
+| Hardware test | Per-screen brightness, both LEDs, each speaker, the motor, battery, temperature, headphones |
+
+A strip on the top screen lights each input while you hold it, and Select toggles a performance overlay. Volume, brightness and the best microgame run persist between launches. The same code also builds and runs on macOS for quick iteration.
 
 ## Requirements
 
@@ -52,10 +61,12 @@ scripts/debug.sh press a 120                # hold a button for 120 ms
 scripts/debug.sh tap 500 400                # touch the bottom screen
 scripts/debug.sh swipe 300 650 650 250 120  # drag over 120 ms
 scripts/debug.sh shot out.png               # save both screens, top above bottom
-scripts/debug.sh logs                       # follow the game log
+scripts/debug.sh sleep 5                    # suspend, then wake on the RTC alarm
+scripts/debug.sh panic                      # crash on purpose to test crash.log
+scripts/debug.sh logs                       # follow the game log, with a perf line each second
 ```
 
-On macOS, set `TWINBIT_DEBUG=1` and write commands to the pipe directly. Set `TWINBIT_START=dice` to open the dice scene at launch.
+Scenes are `micro`, `dice`, `stress` and `hardware`. On macOS, set `TWINBIT_DEBUG=1` and write commands to the pipe directly. Set `TWINBIT_START` to a scene name to open it at launch.
 
 Run the tests:
 
@@ -76,20 +87,25 @@ cargo test
 | Volume | V+ / V- | = / - |
 | Lid | Close the lid | C toggles |
 | Sleep and wake | Power button | None |
-| Back to title | Back | Tab |
+| Performance overlay | Select | Backspace |
+| Back to the menu | Back | Tab |
 | Quit | Hold Home for one second | Esc |
 
-On the title screen, every button plays a tone. L1 and R1 play a tone from the left and right speaker, R2 runs the vibration motor, and Y opens the dice scene. In the dice scene, tap, swipe or press A to throw the die.
+In the menu, tap a row or use Up, Down and A. Each scene lists its own controls on screen. In the stress test, L1 and R1 set the top screen's spawn rate, L2 and R2 the bottom's, and A clears both.
+
+### Saves and crashes
+
+The game keeps `save.txt` and `crash.log` next to its binary: `/mnt/sdcard/PORTS/twinbit` when launched from Ports, `/userdata/twinbit` in a dev run. Set `TWINBIT_SAVE` to use a different save path. Each panic appends a backtrace to `crash.log`.
 
 ## Layout
 
 | Path | Contents |
 |---|---|
-| `crates/game` | Game logic, input model, microgames, dice physics, 3D meshes, bitmap font. No platform dependencies. |
-| `crates/render` | OpenGL renderer for 2D shapes and lit 3D meshes: GL 3.3 on macOS, GLES 3.0 on the device. |
-| `crates/app` | Windows, input, audio, mic, debug mode, and the device-only gamepad, lid and motor code. |
+| `crates/game` | Scenes, input model, dice physics, 3D meshes, save format, bitmap font. No platform dependencies. |
+| `crates/render` | OpenGL renderer for shapes, sprites, TrueType text and lit 3D meshes: GL 3.3 on macOS, GLES 3.0 on the device. |
+| `crates/app` | Windows, input, audio, mic, saves, crash log, debug mode, and the device-only sysfs and evdev code. |
 | `scripts` | Cross-compile, sysroot, deploy, install and debug scripts, and the on-device run script. |
-| `assets` | The Ports menu launcher and its cover art. |
+| `assets` | The sprite sheet, the font and its license, and the Ports launcher with its cover art. |
 
 ## Device notes
 
@@ -104,7 +120,13 @@ The stock firmware runs Weston with one output per panel. DSI-1 is the top scree
 | Lid | `/sys/class/anbernic_misc/hallkey`: `3` open, `2` closed |
 | Vibration motor | `/sys/class/anbernic_misc/moto`: `1` on, `0` off |
 | Microphone and speaker | ALSA through PulseAudio, `default` device |
+| Headphone jack | evdev `rockchip-rk817 Headset`, `SW_HEADPHONE_INSERT` |
+| Backlights | `/sys/class/backlight/backlight` (top) and `backlight1` (bottom), 0 to 255. `bl_power` `4` turns a panel off. |
+| LEDs | `/sys/class/anbernic_misc/work_led` and `lowpwr_led`, `1` on, `0` off |
+| Battery | `/sys/class/power_supply/cw2015-battery`. The startup scripts select this fuel gauge over the PMU's `battery`. |
+| Temperature | `/sys/class/thermal`, zones `soc-thermal` and `gpu-thermal`, in millidegrees |
+| Wake alarm | `/sys/class/rtc/rtc0/wakealarm` |
 
 The button codes do not follow the evdev gamepad layout. For example, Start reports `BTN_TR` and A reports `BTN_SOUTH`. `crates/app/src/device.rs` holds the full map.
 
-When the stock menu launches a port, the frontend exits first and restarts afterwards. `scripts/deploy.sh` runs the game over SSH instead, so the on-device `run.sh` pauses the frontend to stop its idle timer from suspending the device.
+When the stock menu launches a port, the frontend exits first and restarts afterwards. `scripts/deploy.sh` runs the game over SSH instead, so the on-device `run.sh` pauses the frontend to stop its idle timer from suspending the device. The timer keeps counting while paused, so resuming the frontend can suspend the device at once. For that reason a crash restarts the game, and only a clean quit hands control back.
