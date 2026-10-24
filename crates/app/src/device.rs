@@ -25,6 +25,8 @@ const BACKLIGHTS: [&str; 2] = ["/sys/class/backlight/backlight", "/sys/class/bac
 const BACKLIGHT_MIN: f32 = 8.0;
 const WORK_LED: &str = "/sys/class/anbernic_misc/work_led";
 const LOW_LED: &str = "/sys/class/anbernic_misc/lowpwr_led";
+/// The stock menu sets this to 1 when it launches a port, and Weston then delivers no touches.
+const TOUCH_CTRL: &str = "/sys/class/anbernic_misc/tpctrl";
 /// The startup scripts select the cw2015 fuel gauge when present; the PMU's own estimate disagrees with it.
 const BATTERIES: [&str; 2] = ["/sys/class/power_supply/cw2015-battery", "/sys/class/power_supply/battery"];
 const STICK_MAX: f32 = 4096.0;
@@ -50,6 +52,7 @@ pub struct Device {
     hall_open: Option<String>,
     rumbling: bool,
     original_brightness: [Option<String>; 2],
+    original_touch: Option<String>,
     written: Option<Written>,
 }
 
@@ -93,7 +96,12 @@ impl Device {
         }
         let hall_open = fs::read_to_string(HALL).ok();
         let original_brightness = BACKLIGHTS.map(|b| fs::read_to_string(format!("{b}/brightness")).ok());
-        found.then_some(Self { pad, headphones, hall_open, rumbling: false, original_brightness, written: None })
+        let original_touch = read_trim(TOUCH_CTRL);
+        if original_touch.as_deref().is_some_and(|t| t != "0") {
+            eprintln!("touch: tpctrl was {}, setting 0", original_touch.as_deref().unwrap_or_default());
+            write(TOUCH_CTRL, "0");
+        }
+        found.then_some(Self { pad, headphones, hall_open, rumbling: false, original_brightness, original_touch, written: None })
     }
 
     pub fn held(&self) -> Buttons {
@@ -184,7 +192,7 @@ impl Device {
 }
 
 impl Drop for Device {
-    /// Hands the backlights and LEDs back the way the frontend left them.
+    /// Hands the backlights, LEDs and touch mode back the way the frontend left them.
     fn drop(&mut self) {
         self.set_rumble(false);
         for (path, original) in BACKLIGHTS.iter().zip(&self.original_brightness) {
@@ -195,6 +203,9 @@ impl Drop for Device {
         }
         write(WORK_LED, "0");
         write(LOW_LED, "0");
+        if let Some(t) = &self.original_touch {
+            write(TOUCH_CTRL, t);
+        }
     }
 }
 
