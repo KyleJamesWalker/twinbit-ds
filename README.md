@@ -2,6 +2,24 @@
 
 A Rust tech demo for the ANBERNIC RG DS Plus. It is a test project, not a finished game. It gives a working example of every hardware feature, as a starting point for a real game.
 
+<!-- template -->
+## Start a new game
+
+This repository is a GitHub template. Create a game from it, then rename it:
+
+```sh
+gh repo create my-game --private --template KyleJamesWalker/twinbit-ds --clone
+cd my-game
+scripts/rename.sh my-game
+cargo test
+git commit -m "chore: rename to my-game"
+```
+
+`scripts/rename.sh` replaces the name everywhere it appears: the crates, the binary, the `TWINBIT_*` environment variables, the device paths and debug pipe, the window titles, and the Ports launcher and its cover art. It then deletes itself and this section. The name must be lowercase letters, digits and hyphens, at most 15 characters.
+
+The demo scenes stay in the copy. Keep, adapt or delete them as the new game needs.
+<!-- /template -->
+
 ## Screenshots
 
 Captured on the device with `scripts/debug.sh shot`. Each image shows the top screen above the bottom screen.
