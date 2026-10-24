@@ -1,0 +1,11 @@
+[package]
+name = "twinbit-render"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[dependencies]
+fontdue = "0.9"
+glow.workspace = true
+png = "0.17"
+twinbit-game.workspace = true

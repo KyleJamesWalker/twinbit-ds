@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Minimal pkg-config for cross builds: answers from the .pc files in $PKG_CONFIG_LIBDIR.
+set -euo pipefail
+want=() ; out=()
+for a in "$@"; do
+  case "$a" in
+    --libs|--cflags) want+=("$a") ;;
+    --exists|--print-errors|--short-errors|--modversion) want+=("$a") ;;
+    -*) ;;
+    *) pkg="$a" ;;
+  esac
+done
+pc="${PKG_CONFIG_LIBDIR:?}/${pkg:?}.pc"
+[ -f "$pc" ] || { echo "Package $pkg was not found" >&2; exit 1; }
+field() { grep "^$1:" "$pc" | cut -d: -f2- | sed "s#\${libdir}#${PKG_CONFIG_SYSROOT_DIR}/usr/lib#g; s#\${includedir}#${PKG_CONFIG_SYSROOT_DIR}/usr/include#g"; }
+for w in "${want[@]}"; do
+  case "$w" in
+    --libs) out+=($(field Libs)) ;;
+    --cflags) out+=($(field Cflags)) ;;
+    --modversion) field Version ;;
+  esac
+done
+echo "${out[@]:-}"

@@ -1,0 +1,19 @@
+[workspace]
+resolver = "3"
+members = ["crates/game", "crates/render", "crates/app"]
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+publish = false
+
+[workspace.dependencies]
+twinbit-game = { path = "crates/game" }
+twinbit-render = { path = "crates/render" }
+glow = "0.16"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+# Symbols keep crash.log backtraces readable on the device.
+strip = "none"
