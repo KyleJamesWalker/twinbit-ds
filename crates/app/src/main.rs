@@ -323,8 +323,12 @@ impl ApplicationHandler for App {
         }
     }
 
+    /// Saves and restores the device, then exits without running the GL and Wayland teardown.
     fn exiting(&mut self, _el: &ActiveEventLoop) {
         self.saver.update(self.game.save(), true);
+        #[cfg(target_os = "linux")]
+        drop(self.device.take());
+        std::process::exit(0);
     }
 
     fn about_to_wait(&mut self, _el: &ActiveEventLoop) {
