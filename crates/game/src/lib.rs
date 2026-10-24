@@ -45,6 +45,8 @@ const MENU_ROW: f32 = 110.0;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Scene {
     Microgames,
+    /// A microgame run that starts with one microgame, by index.
+    Microgame(usize),
     Dice,
     Stress,
     Hardware,
@@ -57,6 +59,9 @@ impl Scene {
     pub fn from_name(name: &str) -> Option<Scene> {
         Some(match name {
             "micro" | "microgames" => Scene::Microgames,
+            "stars" => Scene::Microgame(0),
+            "balloon" => Scene::Microgame(1),
+            "dodge" => Scene::Microgame(2),
             "dice" => Scene::Dice,
             "stress" => Scene::Stress,
             "hardware" => Scene::Hardware,
@@ -150,6 +155,13 @@ impl Game {
                 self.score = 0;
                 self.lives = LIVES;
                 self.next_game()
+            }
+            Scene::Microgame(kind) => {
+                self.score = 0;
+                self.lives = LIVES;
+                self.last_kind = kind;
+                let speed = self.speed();
+                State::Intro { t: 0.0, game: micro::make(kind, &mut self.rng, speed) }
             }
             Scene::Dice => State::Dice(Box::new(dice::Dice::new(&mut self.rng))),
             Scene::Stress => State::Stress(Box::new(stress::Stress::new(&mut self.rng))),

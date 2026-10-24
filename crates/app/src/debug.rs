@@ -4,7 +4,7 @@
 //! press <button> [ms]          hold a button (a b x y l1 r1 l2 r2 start select home back up down left right volup voldown)
 //! tap <x> <y>                  touch the bottom screen at screen pixels
 //! swipe <x1> <y1> <x2> <y2> [ms]
-//! scene <name>                 jump to a scene: micro, dice, stress, hardware
+//! scene <name>                 jump to a scene: micro, stars, balloon, dodge, dice, stress, hardware
 //! sleep <secs>                 suspend, waking on the RTC alarm
 //! panic                        crash on purpose to test the crash log
 //! shot <path>                  save both screens, top above bottom, as one PNG
