@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/game"]
+members = ["crates/game", "crates/render"]
 
 [workspace.package]
 edition = "2024"
@@ -9,6 +9,8 @@ publish = false
 
 [workspace.dependencies]
 twinbit-game = { path = "crates/game" }
+twinbit-render = { path = "crates/render" }
+glow = "0.16"
 
 [profile.release]
 lto = "thin"
