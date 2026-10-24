@@ -1,10 +1,10 @@
-//! RG DS Plus hardware outside Wayland: the gamepad, the Back and power keys, the headset jack, sysfs sensors and outputs.
+//! RG DS Plus hardware outside Wayland: the gamepad, the Back and power keys, the headphone jack, sysfs sensors and outputs.
 
 use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use evdev::{AbsoluteAxisCode, EventSummary, KeyCode, SwitchCode};
+use evdev::{AbsoluteAxisCode, EventSummary, KeyCode};
 use twinbit_game::{Battery, Buttons, Outputs};
 
 const PAD_NAME: &str = "ANBERNIC-rk3568-keys";
@@ -13,7 +13,12 @@ const POWER_NAME: &str = "rk805 pwrkey";
 const HALL: &str = "/sys/class/anbernic_misc/hallkey";
 const MOTOR: &str = "/sys/class/anbernic_misc/moto";
 const SUSPEND: &str = "/mnt/vendor/ctrl/pwr_new.sh";
-const HEADSET_NAME: &str = "rockchip-rk817 Headset";
+/// The codec reports the jack only through extcon; its input switch device never sends events.
+const JACK_EXTCON: &str = "rk817-sound";
+const JACK_POLL: std::time::Duration = std::time::Duration::from_millis(250);
+/// PulseAudio sinks from the stock `setPulseaudio.sh`: the speaker amp, and the codec that drives the jack.
+const SPEAKER_SINK: &str = "alsa_output.1.stereo-fallback";
+const HEADPHONE_SINK: &str = "alsa_output.0.HiFi__Speaker__sink";
 const WAKE_ALARM: &str = "/sys/class/rtc/rtc0/wakealarm";
 /// Top screen first.
 const BACKLIGHTS: [&str; 2] = ["/sys/class/backlight/backlight", "/sys/class/backlight/backlight1"];
@@ -70,18 +75,19 @@ impl Device {
             });
         }
         let headphones = Arc::new(AtomicBool::new(false));
-        if let Some((_, mut dev)) = evdev::enumerate().find(|(_, d)| d.name() == Some(HEADSET_NAME)) {
-            let state = dev.get_switch_state().map(|s| s.contains(SwitchCode::SW_HEADPHONE_INSERT)).unwrap_or(false);
-            headphones.store(state, Ordering::Relaxed);
+        if let Some(state) = jack_state_path() {
             let hp = headphones.clone();
             std::thread::spawn(move || {
-                while let Ok(events) = dev.fetch_events() {
-                    for ev in events {
-                        if let EventSummary::Switch(_, SwitchCode::SW_HEADPHONE_INSERT, v) = ev.destructure() {
-                            eprintln!("headphones: {}", if v != 0 { "in" } else { "out" });
-                            hp.store(v != 0, Ordering::Relaxed);
-                        }
+                let mut last = None;
+                loop {
+                    let now = fs::read_to_string(&state).is_ok_and(|s| s.contains("HEADPHONE=1"));
+                    if last != Some(now) {
+                        eprintln!("headphones: {}", if now { "in" } else { "out" });
+                        hp.store(now, Ordering::Relaxed);
+                        route_audio(if now { HEADPHONE_SINK } else { SPEAKER_SINK });
+                        last = Some(now);
                     }
+                    std::thread::sleep(JACK_POLL);
                 }
             });
         }
@@ -189,6 +195,23 @@ impl Drop for Device {
         }
         write(WORK_LED, "0");
         write(LOW_LED, "0");
+    }
+}
+
+fn jack_state_path() -> Option<std::path::PathBuf> {
+    fs::read_dir("/sys/class/extcon").ok()?.flatten().map(|e| e.path()).find(|p| read_trim(&format!("{}/name", p.display())).as_deref() == Some(JACK_EXTCON)).map(|p| p.join("state"))
+}
+
+/// Makes `sink` the default and moves every playing stream onto it, since a new default only affects new streams.
+fn route_audio(sink: &str) {
+    let pactl = |args: &[&str]| std::process::Command::new("pactl").args(args).output();
+    if let Err(e) = pactl(&["set-default-sink", sink]) {
+        eprintln!("audio route: {e}");
+        return;
+    }
+    let Ok(out) = pactl(&["list", "short", "sink-inputs"]) else { return };
+    for id in String::from_utf8_lossy(&out.stdout).lines().filter_map(|l| l.split_whitespace().next()) {
+        pactl(&["move-sink-input", id, sink]).ok();
     }
 }
 

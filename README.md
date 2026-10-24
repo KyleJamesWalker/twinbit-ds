@@ -120,7 +120,7 @@ The stock firmware runs Weston with one output per panel. DSI-1 is the top scree
 | Lid | `/sys/class/anbernic_misc/hallkey`: `3` open, `2` closed |
 | Vibration motor | `/sys/class/anbernic_misc/moto`: `1` on, `0` off |
 | Microphone and speaker | ALSA through PulseAudio, `default` device |
-| Headphone jack | evdev `rockchip-rk817 Headset`, `SW_HEADPHONE_INSERT` |
+| Headphone jack | `/sys/class/extcon/*/state` for `rk817-sound`, `HEADPHONE=1`. Its evdev switch device never sends events. The game moves audio between the PulseAudio sinks `alsa_output.1.stereo-fallback` (speakers) and `alsa_output.0.HiFi__Speaker__sink` (headphones). |
 | Backlights | `/sys/class/backlight/backlight` (top) and `backlight1` (bottom), 0 to 255. `bl_power` `4` turns a panel off. |
 | LEDs | `/sys/class/anbernic_misc/work_led` and `lowpwr_led`, `1` on, `0` off |
 | Battery | `/sys/class/power_supply/cw2015-battery`. The startup scripts select this fuel gauge over the PMU's `battery`. |
