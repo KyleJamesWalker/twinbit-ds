@@ -1,5 +1,5 @@
 use super::{Microgame, Status};
-use crate::{BOTTOM_OFFSET, Frame, Input, SCREEN_W, Sfx, WORLD_H, rng::Rng};
+use crate::{BOTTOM_OFFSET, Frame, Input, SCREEN_W, Sfx, Sprite, WORLD_H, rng::Rng};
 
 const PLAYER_R: f32 = 28.0;
 const PLAYER_Y: f32 = 660.0;
@@ -69,7 +69,7 @@ impl Microgame for Dodge {
         frame.top.clear = [0.18, 0.1, 0.08, 1.0];
         frame.bottom.clear = [0.24, 0.14, 0.1, 1.0];
         for r in &self.rocks {
-            frame.world_circle(r.x, r.y, ROCK_R, [0.55, 0.5, 0.45, 1.0]);
+            frame.world_sprite(Sprite::Rock, r.x, r.y, ROCK_R * 2.3, r.x * 0.01 + r.y * 0.003, [1.0; 4]);
         }
         frame.bottom.circle(self.x, PLAYER_Y, PLAYER_R, [0.3, 0.9, 1.0, 1.0]);
     }

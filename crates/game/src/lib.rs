@@ -9,7 +9,7 @@ mod rng;
 pub mod scene3d;
 mod sfx;
 
-pub use draw::{Canvas, Color, Frame, Shape};
+pub use draw::{Align, Canvas, Color, Frame, Shape, Sprite};
 pub use input::{Buttons, Input, InputTracker, MAX_TOUCHES, RawInput};
 pub use sfx::Sfx;
 

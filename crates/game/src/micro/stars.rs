@@ -1,5 +1,5 @@
 use super::{Microgame, Status};
-use crate::{BOTTOM_OFFSET, Frame, Input, Sfx, WORLD_H, particles::Particles, rng::Rng};
+use crate::{BOTTOM_OFFSET, Frame, Input, Sfx, Sprite, WORLD_H, particles::Particles, rng::Rng};
 
 const RADIUS: f32 = 36.0;
 const GRAB: f32 = 72.0;
@@ -85,7 +85,7 @@ impl Microgame for Stars {
         frame.top.clear = [0.04, 0.05, 0.16, 1.0];
         frame.bottom.clear = [0.06, 0.08, 0.22, 1.0];
         for s in self.stars.iter().filter(|s| !s.caught) {
-            frame.world_circle(s.x, s.y, RADIUS, STAR);
+            frame.world_sprite(Sprite::Star, s.x, s.y, RADIUS * 2.6, s.y * 0.004, [1.0; 4]);
         }
         self.sparks.draw(frame);
         frame.bottom.text_centered(700.0, 8.0, [1.0, 1.0, 1.0, 0.5], "TAP THE STARS");

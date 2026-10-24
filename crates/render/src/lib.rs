@@ -1,3 +1,5 @@
+mod atlas;
+
 use std::collections::HashMap;
 
 use glow::HasContext;
@@ -17,15 +19,18 @@ layout(location = 0) in vec2 a_pos;
 layout(location = 1) in vec2 a_local;
 layout(location = 2) in vec4 a_color;
 layout(location = 3) in float a_kind;
+layout(location = 4) in vec2 a_uv;
 uniform vec2 u_size;
 out vec2 v_local;
 out vec4 v_color;
 out float v_kind;
+out vec2 v_uv;
 void main() {
     gl_Position = vec4(a_pos.x / u_size.x * 2.0 - 1.0, 1.0 - a_pos.y / u_size.y * 2.0, 0.0, 1.0);
     v_local = a_local;
     v_color = a_color;
     v_kind = a_kind;
+    v_uv = a_uv;
 }
 "#;
 
@@ -33,8 +38,14 @@ const FRAG: &str = r#"
 in vec2 v_local;
 in vec4 v_color;
 in float v_kind;
+in vec2 v_uv;
+uniform sampler2D u_atlas;
 out vec4 o_color;
 void main() {
+    if (v_kind > 1.5) {
+        o_color = texture(u_atlas, v_uv) * v_color;
+        return;
+    }
     float a = 1.0;
     if (v_kind > 0.5) {
         float d = length(v_local);
@@ -78,7 +89,10 @@ void main() {
 }
 "#;
 
-const FLOATS_PER_VERT: usize = 9;
+const FLOATS_PER_VERT: usize = 11;
+const KIND_RECT: f32 = 0.0;
+const KIND_CIRCLE: f32 = 1.0;
+const KIND_TEXTURE: f32 = 2.0;
 
 struct Mesh {
     vao: glow::VertexArray,
@@ -93,6 +107,8 @@ pub struct Renderer {
     verts: Vec<f32>,
     mesh_program: glow::Program,
     meshes: HashMap<MeshId, Mesh>,
+    atlas: atlas::Atlas,
+    texture: glow::Texture,
 }
 
 unsafe fn link(gl: &glow::Context, header: &str, vert: &str, frag: &str) -> Result<glow::Program, String> {
@@ -157,13 +173,26 @@ impl Renderer {
             gl.bind_vertex_array(Some(vao));
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
             let stride = (FLOATS_PER_VERT * 4) as i32;
-            for (loc, size, offset) in [(0, 2, 0), (1, 2, 2), (2, 4, 4), (3, 1, 8)] {
+            for (loc, size, offset) in [(0, 2, 0), (1, 2, 2), (2, 4, 4), (3, 1, 8), (4, 2, 9)] {
                 gl.enable_vertex_attrib_array(loc);
                 gl.vertex_attrib_pointer_f32(loc, size, glow::FLOAT, false, stride, offset * 4);
             }
 
+            let atlas = atlas::Atlas::build()?;
+            let texture = gl.create_texture()?;
+            gl.bind_texture(glow::TEXTURE_2D, Some(texture));
+            let size = atlas::SIZE as i32;
+            gl.tex_image_2d(glow::TEXTURE_2D, 0, glow::RGBA8 as i32, size, size, 0, glow::RGBA, glow::UNSIGNED_BYTE, glow::PixelUnpackData::Slice(Some(&atlas.rgba)));
+            gl.generate_mipmap(glow::TEXTURE_2D);
+            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::LINEAR_MIPMAP_LINEAR as i32);
+            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::LINEAR as i32);
+            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_S, glow::CLAMP_TO_EDGE as i32);
+            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_T, glow::CLAMP_TO_EDGE as i32);
+            gl.use_program(Some(program));
+            gl.uniform_1_i32(gl.get_uniform_location(program, "u_atlas").as_ref(), 0);
+
             let u_size = gl.get_uniform_location(program, "u_size");
-            Ok(Self { program, vao, vbo, u_size, verts: Vec::new(), mesh_program, meshes })
+            Ok(Self { program, vao, vbo, u_size, verts: Vec::new(), mesh_program, meshes, atlas, texture })
         }
     }
 
@@ -172,8 +201,18 @@ impl Renderer {
         self.verts.clear();
         for shape in &canvas.shapes {
             match *shape {
-                Shape::Rect { x, y, w, h, color } => self.quad(x, y, w, h, color, 0.0),
-                Shape::Circle { x, y, r, color } => self.quad(x - r, y - r, 2.0 * r, 2.0 * r, color, 1.0),
+                Shape::Rect { x, y, w, h, color } => self.quad(x, y, w, h, color, KIND_RECT),
+                Shape::Circle { x, y, r, color } => self.quad(x - r, y - r, 2.0 * r, 2.0 * r, color, KIND_CIRCLE),
+                Shape::Sprite { sprite, x, y, size, angle, color } => {
+                    let uv = self.atlas.sprite_uv(sprite);
+                    self.sprite(x, y, size, angle, uv, color);
+                }
+                Shape::Text { ref text, x, y, size, color, align } => {
+                    for g in self.atlas.layout(text, x, y, size, align) {
+                        let [gx, gy, gw, gh] = g.rect;
+                        self.textured(gx, gy, gw, gh, g.uv, color);
+                    }
+                }
             }
         }
         let [x, y, w, h] = viewport;
@@ -192,6 +231,8 @@ impl Renderer {
             gl.enable(glow::BLEND);
             gl.blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
             gl.use_program(Some(self.program));
+            gl.active_texture(glow::TEXTURE0);
+            gl.bind_texture(glow::TEXTURE_2D, Some(self.texture));
             gl.uniform_2_f32(self.u_size.as_ref(), SCREEN_W, SCREEN_H);
             gl.bind_vertex_array(Some(self.vao));
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.vbo));
@@ -229,11 +270,28 @@ impl Renderer {
         }
     }
 
-    fn quad(&mut self, x: f32, y: f32, w: f32, h: f32, [r, g, b, a]: [f32; 4], kind: f32) {
-        let corners = [(x, y, -1.0, -1.0), (x + w, y, 1.0, -1.0), (x + w, y + h, 1.0, 1.0), (x, y + h, -1.0, 1.0)];
+    fn quad(&mut self, x: f32, y: f32, w: f32, h: f32, color: [f32; 4], kind: f32) {
+        let corners = [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
+        self.push_quad(corners, [0.0; 4], color, kind);
+    }
+
+    fn textured(&mut self, x: f32, y: f32, w: f32, h: f32, uv: [f32; 4], color: [f32; 4]) {
+        self.push_quad([[x, y], [x + w, y], [x + w, y + h], [x, y + h]], uv, color, KIND_TEXTURE);
+    }
+
+    fn sprite(&mut self, x: f32, y: f32, size: f32, angle: f32, uv: [f32; 4], color: [f32; 4]) {
+        let (s, c) = (angle.sin() * size / 2.0, angle.cos() * size / 2.0);
+        let corner = |dx: f32, dy: f32| [x + dx * c - dy * s, y + dx * s + dy * c];
+        self.push_quad([corner(-1.0, -1.0), corner(1.0, -1.0), corner(1.0, 1.0), corner(-1.0, 1.0)], uv, color, KIND_TEXTURE);
+    }
+
+    /// Corners run clockwise from top-left; `uv` is (u0, v0, u1, v1) for the same corners.
+    fn push_quad(&mut self, corners: [[f32; 2]; 4], [u0, v0, u1, v1]: [f32; 4], [r, g, b, a]: [f32; 4], kind: f32) {
+        let local = [[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]];
+        let uvs = [[u0, v0], [u1, v0], [u1, v1], [u0, v1]];
         for i in [0, 1, 2, 0, 2, 3] {
-            let (px, py, lx, ly) = corners[i];
-            self.verts.extend_from_slice(&[px, py, lx, ly, r, g, b, a, kind]);
+            let ([px, py], [lx, ly], [u, v]) = (corners[i], local[i], uvs[i]);
+            self.verts.extend_from_slice(&[px, py, lx, ly, r, g, b, a, kind, u, v]);
         }
     }
 }
