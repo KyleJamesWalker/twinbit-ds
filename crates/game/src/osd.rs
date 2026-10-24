@@ -2,7 +2,7 @@
 
 use crate::{Buttons, Canvas, Input, SCREEN_H, SCREEN_W, font};
 
-const LABELS: [(&str, Buttons); 18] = [
+const LABELS: [(&str, Buttons); 19] = [
     ("←", Buttons::LEFT),
     ("→", Buttons::RIGHT),
     ("↑", Buttons::UP),
@@ -21,6 +21,7 @@ const LABELS: [(&str, Buttons); 18] = [
     ("BACK", Buttons::BACK),
     ("V+", Buttons::VOL_UP),
     ("V-", Buttons::VOL_DOWN),
+    ("PWR", Buttons::POWER),
 ];
 
 const SCALE: f32 = 4.0;
@@ -52,6 +53,26 @@ pub fn draw(c: &mut Canvas, input: &Input, rumble: bool) {
 }
 
 const STICK_R: f32 = 44.0;
+const FINGER_R: f32 = 44.0;
+const FINGERS: [[f32; 4]; 5] = [
+    [1.0, 0.85, 0.2, 0.9],
+    [0.3, 0.9, 1.0, 0.9],
+    [1.0, 0.4, 0.6, 0.9],
+    [0.5, 1.0, 0.4, 0.9],
+    [0.8, 0.5, 1.0, 0.9],
+];
+
+/// A numbered ring under every finger on the bottom screen.
+pub fn touches(c: &mut Canvas, input: &Input) {
+    for (i, p) in input.touches.iter().enumerate() {
+        let Some([x, y]) = *p else { continue };
+        let color = FINGERS[i % FINGERS.len()];
+        c.circle(x, y, FINGER_R, color);
+        c.circle(x, y, FINGER_R - 8.0, [0.0, 0.0, 0.0, 0.6]);
+        let n = (i + 1).to_string();
+        c.text(x - font::width(&n) * 3.0, y - 7.5, 6.0, color, &n);
+    }
+}
 
 fn stick(c: &mut Canvas, x: f32, y: f32, label: &str, [sx, sy]: [f32; 2]) {
     let moved = sx != 0.0 || sy != 0.0;

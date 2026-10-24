@@ -23,6 +23,7 @@ impl Buttons {
     pub const HOME: Self = Self(1 << 15);
     pub const VOL_UP: Self = Self(1 << 16);
     pub const VOL_DOWN: Self = Self(1 << 17);
+    pub const POWER: Self = Self(1 << 18);
 
     pub fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0 && other.0 != 0
@@ -68,12 +69,16 @@ impl Not for Buttons {
     }
 }
 
+pub const MAX_TOUCHES: usize = 10;
+
 /// Hardware state as a backend samples it each frame. Touch is in bottom-screen pixels.
+/// `touch` is the first finger down; `touches` holds every finger.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct RawInput {
     pub held: Buttons,
     pub stick: [f32; 2],
     pub touch: Option<[f32; 2]>,
+    pub touches: [Option<[f32; 2]>; MAX_TOUCHES],
     pub mic: f32,
     pub lid_closed: bool,
 }
@@ -84,6 +89,7 @@ pub struct Input {
     pub pressed: Buttons,
     pub stick: [f32; 2],
     pub touch: Option<[f32; 2]>,
+    pub touches: [Option<[f32; 2]>; MAX_TOUCHES],
     pub touch_started: bool,
     pub mic: f32,
     pub lid_closed: bool,
@@ -115,6 +121,7 @@ impl InputTracker {
             pressed: raw.held & !self.prev.held,
             stick: raw.stick,
             touch: raw.touch,
+            touches: raw.touches,
             touch_started: raw.touch.is_some() && self.prev.touch.is_none(),
             mic: raw.mic,
             lid_closed: raw.lid_closed,

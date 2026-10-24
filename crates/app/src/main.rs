@@ -4,9 +4,9 @@ mod device;
 mod gfx;
 mod mic;
 
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use twinbit_game::{Buttons, Game, InputTracker, RawInput, SCREEN_H, SCREEN_W};
+use twinbit_game::{Buttons, Game, InputTracker, MAX_TOUCHES, RawInput, SCREEN_H, SCREEN_W};
 use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, MouseButton, TouchPhase, WindowEvent};
@@ -15,6 +15,9 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::WindowId;
 
 const QUIT_HOLD: f32 = 1.0;
+/// The press that wakes the device arrives after resume and must not suspend it again.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+const WAKE_GRACE: Duration = Duration::from_secs(2);
 
 struct App {
     game: Game,
@@ -29,9 +32,11 @@ struct App {
     blow_key: bool,
     cursor: Option<[f32; 2]>,
     mouse_down: bool,
-    touch: Option<(u64, [f32; 2])>,
+    touches: Vec<(u64, [f32; 2])>,
     home_held: f32,
     last: Instant,
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    woke: Instant,
 }
 
 impl App {
@@ -50,9 +55,10 @@ impl App {
             blow_key: false,
             cursor: None,
             mouse_down: false,
-            touch: None,
+            touches: Vec::new(),
             home_held: 0.0,
             last: Instant::now(),
+            woke: Instant::now(),
         }
     }
 
@@ -60,11 +66,17 @@ impl App {
         #[cfg_attr(not(target_os = "linux"), allow(unused_mut))]
         let mut raw = RawInput {
             held: self.keys,
-            touch: self.touch.map(|(_, p)| p).or(self.cursor.filter(|_| self.mouse_down)),
+            touch: self.touches.first().map(|&(_, p)| p).or(self.cursor.filter(|_| self.mouse_down)),
             mic: self.mic.as_ref().map_or(0.0, |m| m.level()).max(if self.blow_key { 1.0 } else { 0.0 }),
             lid_closed: self.lid_key,
             ..Default::default()
         };
+        for (slot, &(_, p)) in raw.touches.iter_mut().zip(&self.touches) {
+            *slot = Some(p);
+        }
+        if self.touches.is_empty() {
+            raw.touches[0] = raw.touch;
+        }
         #[cfg(target_os = "linux")]
         if let Some(dev) = &self.device {
             raw.held |= dev.held();
@@ -82,6 +94,16 @@ impl App {
         self.home_held = if input.held.contains(Buttons::HOME) { self.home_held + dt } else { 0.0 };
         if self.home_held >= QUIT_HOLD {
             return el.exit();
+        }
+        #[cfg(target_os = "linux")]
+        if input.pressed.contains(Buttons::POWER)
+            && self.woke.elapsed() > WAKE_GRACE
+            && let Some(dev) = &mut self.device
+        {
+            dev.suspend();
+            self.last = Instant::now();
+            self.woke = self.last;
+            return;
         }
         self.game.update(&input, dt);
         let sounds = self.game.take_sounds();
@@ -180,10 +202,13 @@ impl ApplicationHandler for App {
             // There is one touch panel, so a touch on either window is a bottom-screen touch.
             WindowEvent::Touch(t) => {
                 let p = self.to_screen(id, t.location);
-                match t.phase {
-                    TouchPhase::Started if self.touch.is_none() => self.touch = Some((t.id, p)),
-                    TouchPhase::Moved if self.touch.is_some_and(|(i, _)| i == t.id) => self.touch = Some((t.id, p)),
-                    TouchPhase::Ended | TouchPhase::Cancelled if self.touch.is_some_and(|(i, _)| i == t.id) => self.touch = None,
+                let finger = self.touches.iter().position(|&(i, _)| i == t.id);
+                match (t.phase, finger) {
+                    (TouchPhase::Started, None) if self.touches.len() < MAX_TOUCHES => self.touches.push((t.id, p)),
+                    (TouchPhase::Moved, Some(f)) => self.touches[f].1 = p,
+                    (TouchPhase::Ended | TouchPhase::Cancelled, Some(f)) => {
+                        self.touches.remove(f);
+                    }
                     _ => {}
                 }
             }

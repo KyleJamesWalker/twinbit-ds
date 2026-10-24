@@ -102,7 +102,8 @@ fn window_attrs(el: &ActiveEventLoop) -> (WindowAttributes, WindowAttributes) {
         eprintln!("monitor {:?} {:?} at {:?}", m.name(), m.size(), m.position());
     }
     if cfg!(target_os = "linux") && monitors.len() >= 2 {
-        let top_name = std::env::var("TWINBIT_TOP").unwrap_or_else(|_| "DSI-1".into());
+        let swapped = std::fs::read_to_string("/sys/class/anbernic_misc/lcdswap").is_ok_and(|s| s.trim() == "1");
+        let top_name = std::env::var("TWINBIT_TOP").unwrap_or_else(|_| if swapped { "DSI-2" } else { "DSI-1" }.into());
         let top = monitors.iter().find(|m| m.name().as_deref() == Some(&top_name)).unwrap_or(&monitors[0]);
         let bottom = monitors.iter().find(|m| m.name() != top.name()).unwrap_or(&monitors[1]);
         eprintln!("top={:?} bottom={:?}", top.name(), bottom.name());

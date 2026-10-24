@@ -18,6 +18,7 @@ enum Wave {
 }
 
 /// One synth voice: a pitch sweep from `f0` to `f1` over `dur` seconds, starting after `delay`.
+/// `pan` runs from -1 (left speaker only) to 1 (right speaker only).
 #[derive(Clone, Copy)]
 struct Note {
     delay: f32,
@@ -26,14 +27,19 @@ struct Note {
     f1: f32,
     wave: Wave,
     gain: f32,
+    pan: f32,
 }
 
 const fn note(delay: f32, dur: f32, f0: f32, f1: f32, wave: Wave, gain: f32) -> Note {
-    Note { delay, dur, f0, f1, wave, gain }
+    Note { delay, dur, f0, f1, wave, gain, pan: 0.0 }
 }
 
 fn arpeggio(freqs: &[f32], step: f32, wave: Wave) -> Vec<Note> {
     freqs.iter().enumerate().map(|(i, &f)| note(i as f32 * step, step * 1.4, f, f, wave, 0.8)).collect()
+}
+
+fn panned(notes: Vec<Note>, pan: f32) -> Vec<Note> {
+    notes.into_iter().map(|n| Note { pan, ..n }).collect()
 }
 
 fn notes(sfx: Sfx) -> Vec<Note> {
@@ -43,6 +49,8 @@ fn notes(sfx: Sfx) -> Vec<Note> {
             let f = 440.0 * 2f32.powf(n as f32 / 12.0);
             vec![note(0.0, 0.06, f, f, Square, 0.6)]
         }
+        Sfx::Left => panned(arpeggio(&[523.0, 659.0, 523.0], 0.09, Square), -1.0),
+        Sfx::Right => panned(arpeggio(&[784.0, 988.0, 784.0], 0.09, Square), 1.0),
         Sfx::Start => arpeggio(&[523.0, 659.0, 784.0, 1047.0], 0.07, Square),
         Sfx::Prompt => arpeggio(&[784.0, 1047.0], 0.06, Square),
         Sfx::Catch => vec![note(0.0, 0.09, 880.0, 1760.0, Square, 0.7)],
@@ -69,8 +77,8 @@ struct Synth {
 }
 
 impl Synth {
-    fn sample(&mut self) -> f32 {
-        let mut sum = 0.0;
+    fn sample(&mut self) -> [f32; 2] {
+        let mut sum = [0.0; 2];
         for v in &mut self.voices {
             v.t += self.dt;
             if v.t < 0.0 {
@@ -90,10 +98,13 @@ impl Synth {
                 }
             };
             let env = (v.t / ATTACK).min(1.0) * (1.0 - v.t / n.dur).max(0.0);
-            sum += wave * env * n.gain;
+            let s = wave * env * n.gain;
+            sum[0] += s * (1.0 - n.pan).min(1.0);
+            sum[1] += s * (1.0 + n.pan).min(1.0);
         }
         self.voices.retain(|v| v.t < v.note.dur);
-        (sum * MIX * f32::from_bits(self.volume.load(Ordering::Relaxed))).clamp(-1.0, 1.0)
+        let gain = MIX * f32::from_bits(self.volume.load(Ordering::Relaxed));
+        sum.map(|s| (s * gain).clamp(-1.0, 1.0))
     }
 
     fn fill<T: SizedSample + cpal::FromSample<f32>>(&mut self, data: &mut [T], channels: usize) {
@@ -101,8 +112,15 @@ impl Synth {
             self.voices.extend(notes(sfx).into_iter().map(|note| Voice { note, t: -note.delay, phase: 0.0 }));
         }
         for frame in data.chunks_mut(channels) {
-            let s = T::from_sample(self.sample());
-            frame.fill(s);
+            let [l, r] = self.sample();
+            match frame {
+                [left, right, rest @ ..] => {
+                    *left = T::from_sample(l);
+                    *right = T::from_sample(r);
+                    rest.fill(T::from_sample((l + r) / 2.0));
+                }
+                _ => frame.fill(T::from_sample((l + r) / 2.0)),
+            }
         }
     }
 }

@@ -1,4 +1,4 @@
-//! RG DS Plus hardware that Weston does not forward: the gamepad, the Back key, the lid sensor, the motor.
+//! RG DS Plus hardware that Weston does not forward: the gamepad, the Back and power keys, the lid sensor, the motor.
 
 use std::fs;
 use std::sync::{Arc, Mutex};
@@ -8,8 +8,10 @@ use twinbit_game::Buttons;
 
 const PAD_NAME: &str = "ANBERNIC-rk3568-keys";
 const BACK_NAME: &str = "adc-keys";
+const POWER_NAME: &str = "rk805 pwrkey";
 const HALL: &str = "/sys/class/anbernic_misc/hallkey";
 const MOTOR: &str = "/sys/class/anbernic_misc/moto";
+const SUSPEND: &str = "/mnt/vendor/ctrl/pwr_new.sh";
 const STICK_MAX: f32 = 4096.0;
 
 #[derive(Clone, Copy, Default)]
@@ -30,7 +32,7 @@ impl Device {
         let log = std::env::var_os("TWINBIT_LOG_INPUT").is_some();
         let pad = Arc::new(Mutex::new(Pad::default()));
         let mut found = false;
-        for (path, mut dev) in evdev::enumerate().filter(|(_, d)| matches!(d.name(), Some(PAD_NAME | BACK_NAME))) {
+        for (path, mut dev) in evdev::enumerate().filter(|(_, d)| matches!(d.name(), Some(PAD_NAME | BACK_NAME | POWER_NAME))) {
             eprintln!("input: {} {:?}", path.display(), dev.name());
             found = true;
             let p = pad.clone();
@@ -66,6 +68,14 @@ impl Device {
             if let Err(e) = fs::write(MOTOR, if on { "1" } else { "0" }) {
                 eprintln!("motor: {e}");
             }
+        }
+    }
+
+    /// Suspends through the stock script, which returns once the device wakes.
+    pub fn suspend(&mut self) {
+        self.set_rumble(false);
+        if let Err(e) = std::process::Command::new(SUSPEND).status() {
+            eprintln!("suspend: {e}");
         }
     }
 
@@ -125,6 +135,7 @@ fn button(code: KeyCode) -> Option<Buttons> {
         KeyCode::KEY_BACK => Buttons::BACK,
         KeyCode::KEY_VOLUMEUP => Buttons::VOL_UP,
         KeyCode::KEY_VOLUMEDOWN => Buttons::VOL_DOWN,
+        KeyCode::KEY_POWER => Buttons::POWER,
         _ => return None,
     })
 }

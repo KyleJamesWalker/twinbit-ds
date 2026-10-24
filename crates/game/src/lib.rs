@@ -8,7 +8,7 @@ mod rng;
 mod sfx;
 
 pub use draw::{Canvas, Color, Frame, Shape};
-pub use input::{Buttons, Input, InputTracker, RawInput};
+pub use input::{Buttons, Input, InputTracker, MAX_TOUCHES, RawInput};
 pub use sfx::Sfx;
 
 use micro::{Microgame, Status};
@@ -28,6 +28,7 @@ const RUMBLE_MISS: f32 = 0.35;
 const RUMBLE_NICE: f32 = 0.12;
 const VOLUME_MAX: u8 = 10;
 const VOLUME_SHOWN: f32 = 1.2;
+const SPEAKER_SHOWN: f32 = 0.6;
 const WHITE: Color = [1.0, 1.0, 1.0, 1.0];
 
 enum State {
@@ -50,6 +51,8 @@ pub struct Game {
     sounds: Vec<Sfx>,
     volume: u8,
     volume_shown: f32,
+    /// Which speaker the stereo test last played, and for how much longer to label it.
+    speaker: Option<(Sfx, f32)>,
 }
 
 impl Game {
@@ -66,6 +69,7 @@ impl Game {
             sounds: Vec::new(),
             volume: 6,
             volume_shown: 0.0,
+            speaker: None,
         }
     }
 
@@ -110,6 +114,7 @@ impl Game {
         self.input = *input;
         self.rumble = (self.rumble - dt).max(0.0);
         self.volume_shown = (self.volume_shown - dt).max(0.0);
+        self.speaker = self.speaker.map(|(s, t)| (s, t - dt)).filter(|&(_, t)| t > 0.0);
         let step = input.pressed.contains(Buttons::VOL_UP) as i8 - input.pressed.contains(Buttons::VOL_DOWN) as i8;
         if step != 0 {
             self.volume = self.volume.saturating_add_signed(step).min(VOLUME_MAX);
@@ -133,8 +138,18 @@ impl Game {
                 self.next_game()
             }
             State::Title => {
-                let fresh = input.pressed & !(Buttons::VOL_UP | Buttons::VOL_DOWN);
-                if fresh.0 != 0 {
+                let fresh = input.pressed & !(Buttons::VOL_UP | Buttons::VOL_DOWN | Buttons::POWER);
+                let side = if fresh.any(Buttons::L1) {
+                    Some(Sfx::Left)
+                } else if fresh.any(Buttons::R1) {
+                    Some(Sfx::Right)
+                } else {
+                    None
+                };
+                if let Some(s) = side {
+                    self.sounds.push(s);
+                    self.speaker = Some((s, SPEAKER_SHOWN));
+                } else if fresh.0 != 0 {
                     self.sounds.push(Sfx::Tick(fresh.0.trailing_zeros() as u8));
                 }
                 if fresh.any(Buttons::R2) {
@@ -180,7 +195,13 @@ impl Game {
             State::Title => {
                 f.top.text_centered(280.0, 32.0, WHITE, "TWINBIT");
                 f.bottom.text_centered(340.0, 12.0, WHITE, "TAP OR PRESS START");
-                f.bottom.text_centered(440.0, 6.0, [1.0, 1.0, 1.0, 0.5], "R2: TEST RUMBLE   HOLD HOME: QUIT");
+                f.bottom.text_centered(440.0, 6.0, [1.0, 1.0, 1.0, 0.5], "L1 R1: SPEAKERS   R2: RUMBLE");
+                f.bottom.text_centered(490.0, 6.0, [1.0, 1.0, 1.0, 0.5], "HOLD HOME: QUIT");
+                if let Some((side, _)) = self.speaker {
+                    let label = if side == Sfx::Left { "LEFT" } else { "RIGHT" };
+                    let x = if side == Sfx::Left { 60.0 } else { SCREEN_W - 60.0 - font::width(label) * 12.0 };
+                    f.bottom.text(x, 600.0, 12.0, [1.0, 0.85, 0.2, 1.0], label);
+                }
             }
             State::Intro { game, .. } => {
                 f.top.text_centered(300.0, 36.0, [1.0, 0.85, 0.2, 1.0], game.prompt());
@@ -208,6 +229,7 @@ impl Game {
             f.top.text_centered(40.0, 8.0, WHITE, &format!("VOL {}", self.volume));
         }
         osd::draw(&mut f.top, &self.input, self.rumble());
+        osd::touches(&mut f.bottom, &self.input);
         f
     }
 

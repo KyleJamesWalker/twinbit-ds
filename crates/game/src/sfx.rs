@@ -3,6 +3,9 @@
 pub enum Sfx {
     /// Button tester blip; the value picks the pitch.
     Tick(u8),
+    /// Stereo test tones, one per speaker.
+    Left,
+    Right,
     Start,
     Prompt,
     Catch,
