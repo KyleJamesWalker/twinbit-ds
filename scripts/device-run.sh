@@ -1,7 +1,7 @@
 #!/bin/sh
 # Runs on the device: pauses the stock frontend (and its idle auto-sleep) while the game runs.
 # A deploy drops in twinbit.new and touches /tmp/twinbit.restart to relaunch without resuming the frontend.
-# Set CAPTURE=1 to also log every input device and the lid sensor.
+# Set CAPTURE=1 to also log every input device and the lid sensor, and DEBUG=1 for remote control.
 cd "$(dirname "$0")"
 . /etc/profile.d/myenv.sh
 front=$(pidof muos2.bin dmenu.bin)
@@ -12,6 +12,7 @@ if [ -n "$CAPTURE" ]; then
   (while :; do echo "$(date +%s) $(cat /sys/class/anbernic_misc/hallkey)"; sleep 0.5; done) > hall.log &
   export TWINBIT_LOG_INPUT=1
 fi
+[ -n "$DEBUG" ] && export TWINBIT_DEBUG=1
 while :; do
   [ -f twinbit.new ] && mv twinbit.new twinbit
   rm -f /tmp/twinbit.restart

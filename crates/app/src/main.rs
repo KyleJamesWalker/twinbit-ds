@@ -1,4 +1,5 @@
 mod audio;
+mod debug;
 #[cfg(target_os = "linux")]
 mod device;
 mod gfx;
@@ -37,6 +38,8 @@ struct App {
     last: Instant,
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     woke: Instant,
+    debug: Option<std::sync::mpsc::Receiver<debug::Command>>,
+    injector: debug::Injector,
 }
 
 impl App {
@@ -63,6 +66,8 @@ impl App {
             home_held: 0.0,
             last: Instant::now(),
             woke: Instant::now(),
+            debug: debug::listen(),
+            injector: debug::Injector::default(),
         }
     }
 
@@ -94,7 +99,24 @@ impl App {
         let now = Instant::now();
         let dt = (now - self.last).as_secs_f32().min(0.05);
         self.last = now;
-        let input = self.tracker.frame(self.raw_input());
+        let mut shot = None;
+        for cmd in self.debug.iter().flat_map(|rx| rx.try_iter()).collect::<Vec<_>>() {
+            match cmd {
+                debug::Command::Press(b, secs) => self.injector.press(b, secs),
+                debug::Command::Touch(keys) => self.injector.touch(keys),
+                debug::Command::Scene(name) if name == "dice" => self.game.open_dice(),
+                debug::Command::Scene(name) => eprintln!("debug: unknown scene {name}"),
+                debug::Command::Shot(path) => shot = Some(path),
+            }
+        }
+        let mut raw = self.raw_input();
+        let (held, touch) = self.injector.frame(dt);
+        raw.held |= held;
+        if let Some(t) = touch {
+            raw.touch = t;
+            raw.touches[0] = t;
+        }
+        let input = self.tracker.frame(raw);
         self.home_held = if input.held.contains(Buttons::HOME) { self.home_held + dt } else { 0.0 };
         if self.home_held >= QUIT_HOLD {
             return el.exit();
@@ -119,11 +141,21 @@ impl App {
         if let Some(dev) = &mut self.device {
             dev.set_rumble(self.game.rumble());
         }
-        if let Some(gfx) = &mut self.gfx
-            && let Err(e) = gfx.render(&self.game.draw())
-        {
-            eprintln!("render: {e}");
-            el.exit();
+        if let Some(gfx) = &mut self.gfx {
+            match gfx.render(&self.game.draw(), shot.is_some()) {
+                Ok(Some(img)) => {
+                    let path = shot.unwrap();
+                    match debug::save_png(&path, img.width, img.height, &img.rgba) {
+                        Ok(()) => eprintln!("debug: saved {}", path.display()),
+                        Err(e) => eprintln!("debug: shot failed: {e}"),
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    eprintln!("render: {e}");
+                    el.exit();
+                }
+            }
         }
     }
 
