@@ -167,7 +167,7 @@ The stock firmware runs Weston with one output per panel. DSI-1 is the top scree
 | Buttons, stick, d-pad | evdev `ANBERNIC-rk3568-keys`. Weston does not forward this device. |
 | Back key | evdev `adc-keys`, `KEY_BACK` |
 | Power key | evdev `rk805 pwrkey`, `KEY_POWER`. A press runs the stock `/mnt/vendor/ctrl/pwr_new.sh` to suspend. |
-| Touch | Wayland touch events from the `gt9xx` panel, up to 10 fingers |
+| Touch | Wayland touch events from the `gt9xx` panel, up to 10 fingers. The stock menu sets `/sys/class/anbernic_misc/tpctrl` to `1` when it launches a port, which stops Weston from delivering touches, so the game sets it to `0`. |
 | Lid | `/sys/class/anbernic_misc/hallkey`: `3` open, `2` closed |
 | Vibration motor | `/sys/class/anbernic_misc/moto`: `1` on, `0` off |
 | Microphone and speakers | ALSA through PulseAudio. The game plays stereo and records from the `default` source. |
@@ -180,6 +180,6 @@ The stock firmware runs Weston with one output per panel. DSI-1 is the top scree
 
 The button codes do not follow the evdev gamepad layout. For example, Start reports `BTN_TR` and A reports `BTN_SOUTH`. `crates/app/src/device.rs` holds the full map.
 
-On exit, the game hands the backlights and LEDs back the way it found them.
+On exit, the game hands the backlights, LEDs and touch mode back the way it found them.
 
 When the stock menu launches a port, the frontend exits first and restarts afterwards. `scripts/deploy.sh` runs the game over SSH instead, so the on-device `run.sh` pauses the frontend to stop its idle timer from suspending the device. The timer keeps counting while paused, so resuming the frontend can suspend the device at once. For that reason a crash restarts the game, and only a clean quit hands control back.
