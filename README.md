@@ -4,7 +4,7 @@ A Rust tech demo for the ANBERNIC RG DS Plus. It is a test project, not a finish
 
 ## Overview
 
-The demo is a short run of dual-screen microgames plus a live button tester. Together they use both screens, multi-touch, the microphone, every button and the stick. They also use both speakers, the vibration motor, the lid sensor and the power button. The same code also builds and runs on macOS for quick iteration.
+The demo is a short run of dual-screen microgames, a 3D dice tray with rigid body physics, and a live button tester. Together they use both screens, multi-touch, the microphone, every button and the stick. They also use both speakers, the vibration motor, the lid sensor and the power button. The same code also builds and runs on macOS for quick iteration.
 
 ## Requirements
 
@@ -42,6 +42,21 @@ Install into the stock menu as Ports > Twinbit:
 scripts/install.sh
 ```
 
+### Debug mode
+
+`DEBUG=1 scripts/deploy.sh` starts the game with a control pipe at `/tmp/twinbit.ctl`. `scripts/debug.sh` drives it over SSH:
+
+```sh
+scripts/debug.sh scene dice                 # open a scene
+scripts/debug.sh press a 120                # hold a button for 120 ms
+scripts/debug.sh tap 500 400                # touch the bottom screen
+scripts/debug.sh swipe 300 650 650 250 120  # drag over 120 ms
+scripts/debug.sh shot out.png               # save both screens, top above bottom
+scripts/debug.sh logs                       # follow the game log
+```
+
+On macOS, set `TWINBIT_DEBUG=1` and write commands to the pipe directly. Set `TWINBIT_START=dice` to open the dice scene at launch.
+
 Run the tests:
 
 ```sh
@@ -64,16 +79,16 @@ cargo test
 | Back to title | Back | Tab |
 | Quit | Hold Home for one second | Esc |
 
-On the title screen, every button plays a tone. L1 and R1 play a tone from the left and right speaker, and R2 runs the vibration motor.
+On the title screen, every button plays a tone. L1 and R1 play a tone from the left and right speaker, R2 runs the vibration motor, and Y opens the dice scene. In the dice scene, tap, swipe or press A to throw the die.
 
 ## Layout
 
 | Path | Contents |
 |---|---|
-| `crates/game` | Game logic, input model, microgames, bitmap font. No platform dependencies. |
-| `crates/render` | OpenGL renderer for rectangles and circles: GL 3.3 on macOS, GLES 3.0 on the device. |
-| `crates/app` | Windows, input, audio, mic, and the device-only gamepad, lid and motor code. |
-| `scripts` | Cross-compile, sysroot, deploy and install scripts, and the on-device run script. |
+| `crates/game` | Game logic, input model, microgames, dice physics, 3D meshes, bitmap font. No platform dependencies. |
+| `crates/render` | OpenGL renderer for 2D shapes and lit 3D meshes: GL 3.3 on macOS, GLES 3.0 on the device. |
+| `crates/app` | Windows, input, audio, mic, debug mode, and the device-only gamepad, lid and motor code. |
+| `scripts` | Cross-compile, sysroot, deploy, install and debug scripts, and the on-device run script. |
 | `assets` | The Ports menu launcher and its cover art. |
 
 ## Device notes
