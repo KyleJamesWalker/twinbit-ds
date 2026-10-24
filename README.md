@@ -4,7 +4,7 @@ A Rust tech demo for the ANBERNIC RG DS Plus. It is a test project, not a finish
 
 ## Overview
 
-The demo is a short run of dual-screen microgames plus a live button tester. Together they use both screens, the touch panel, the microphone, every button and the stick, the speaker, the vibration motor and the lid sensor. The same code also builds and runs on macOS for quick iteration.
+The demo is a short run of dual-screen microgames plus a live button tester. Together they use both screens, multi-touch, the microphone, every button and the stick. They also use both speakers, the vibration motor, the lid sensor and the power button. The same code also builds and runs on macOS for quick iteration.
 
 ## Requirements
 
@@ -36,6 +36,12 @@ CAPTURE=1 scripts/deploy.sh   # also log every input device and the lid sensor
 ssh root@anbernic.local tail -f /userdata/twinbit/run.log
 ```
 
+Install into the stock menu as Ports > Twinbit:
+
+```sh
+scripts/install.sh
+```
+
 Run the tests:
 
 ```sh
@@ -54,10 +60,11 @@ cargo test
 | Blow | Hinge microphone | Microphone, or hold Space |
 | Volume | V+ / V- | = / - |
 | Lid | Close the lid | C toggles |
+| Sleep and wake | Power button | None |
 | Back to title | Back | Tab |
 | Quit | Hold Home for one second | Esc |
 
-On the title screen, every button plays a tone and R2 runs the vibration motor.
+On the title screen, every button plays a tone. L1 and R1 play a tone from the left and right speaker, and R2 runs the vibration motor.
 
 ## Layout
 
@@ -66,19 +73,23 @@ On the title screen, every button plays a tone and R2 runs the vibration motor.
 | `crates/game` | Game logic, input model, microgames, bitmap font. No platform dependencies. |
 | `crates/render` | OpenGL renderer for rectangles and circles: GL 3.3 on macOS, GLES 3.0 on the device. |
 | `crates/app` | Windows, input, audio, mic, and the device-only gamepad, lid and motor code. |
-| `scripts` | Cross-compile, sysroot and deploy scripts, and the on-device run script. |
+| `scripts` | Cross-compile, sysroot, deploy and install scripts, and the on-device run script. |
+| `assets` | The Ports menu launcher and its cover art. |
 
 ## Device notes
 
-The stock firmware runs Weston with one output per panel. DSI-1 is the top screen and DSI-2 is the bottom screen. Set `TWINBIT_TOP` to change the assignment.
+The stock firmware runs Weston with one output per panel. DSI-1 is the top screen and DSI-2 is the bottom screen. The game swaps them when the system screen-swap setting (`lcdswap`) is on. Set `TWINBIT_TOP` to override the assignment.
 
 | Hardware | Interface |
 |---|---|
 | Buttons, stick, d-pad | evdev `ANBERNIC-rk3568-keys`. Weston does not forward this device. |
 | Back key | evdev `adc-keys`, `KEY_BACK` |
-| Touch | Wayland touch events from the `gt9xx` panel |
+| Power key | evdev `rk805 pwrkey`, `KEY_POWER`. A press runs the stock `/mnt/vendor/ctrl/pwr_new.sh` to suspend. |
+| Touch | Wayland touch events from the `gt9xx` panel, up to 10 fingers |
 | Lid | `/sys/class/anbernic_misc/hallkey`: `3` open, `2` closed |
 | Vibration motor | `/sys/class/anbernic_misc/moto`: `1` on, `0` off |
 | Microphone and speaker | ALSA through PulseAudio, `default` device |
 
 The button codes do not follow the evdev gamepad layout. For example, Start reports `BTN_TR` and A reports `BTN_SOUTH`. `crates/app/src/device.rs` holds the full map.
+
+When the stock menu launches a port, the frontend exits first and restarts afterwards. `scripts/deploy.sh` runs the game over SSH instead, so the on-device `run.sh` pauses the frontend to stop its idle timer from suspending the device.
