@@ -91,6 +91,8 @@ Install into the stock menu as Ports > Twinbit:
 scripts/install.sh
 ```
 
+Publishing a GitHub release, such as with `gh release create v0.2.0 --generate-notes`, runs `.github/workflows/release.yml`. It attaches the device build as a Ports-layout tarball; extract it into the SD card's `Ports` folder.
+
 Run the tests:
 
 ```sh
@@ -174,6 +176,7 @@ Above about 2,200 sprites per screen, frame time grows linearly with the sprite 
 | `crates/app` | Windows, input, audio, mic, saves, crash log, debug mode, and the device-only sysfs and evdev code. |
 | `scripts` | Cross-compile, sysroot, deploy, install and debug scripts, and the on-device run script. |
 | `assets` | The sprite sheet, the font and its license, and the Ports launcher with its cover art. |
+| `.github/workflows` | The release build. |
 | `docs/screenshots` | The screenshots above. |
 
 ## Device notes
