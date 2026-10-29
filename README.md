@@ -139,6 +139,23 @@ scripts/debug.sh logs                       # follow the game log, with a perf l
 
 The scene names are `micro`, `stars`, `balloon`, `dodge`, `dice`, `stress` and `hardware`. The `stars`, `balloon` and `dodge` scenes start a microgame run on that microgame. On macOS, set `TWINBIT_DEBUG=1` and write commands to the pipe directly.
 
+### Recording and streaming
+
+`scripts/capture.sh` records the device's screens and sound to an MP4 on the SD card, or plays them live on the Mac. It works with any running game, in debug mode or not, and needs nothing deployed. The device's hardware H.264 encoder does the work, so the game holds 60 fps while it records both screens with sound. Capture takes about a third of one CPU core.
+
+```sh
+scripts/capture.sh record          # both screens and sound, to /mnt/sdcard/captures
+scripts/capture.sh stop            # finish the MP4
+scripts/capture.sh pull            # copy the newest here, top screen stacked above the bottom
+scripts/capture.sh stream          # play the top screen live in ffplay; close the window to stop
+scripts/capture.sh stream both     # both screens, stacked
+AUDIO=0 scripts/capture.sh stream  # no sound, less delay
+```
+
+`record` and `stream` take `top`, `bottom` or `both`, and read which output is the top screen from `run.log`. A recording of both screens keeps each screen as its own video track. `pull` stacks them into one video, and a player that shows only the first track shows the top screen. A recording takes about 50 to 80 MB a minute, and `record` refuses to start with less than 1 GB free. Set `CAPTURE_DIR` to record somewhere else.
+
+The stream reaches the Mac about 240 ms after the device draws it, or about 155 ms with `AUDIO=0`, before ffplay's own buffering. The Mac needs `ffmpeg`, which includes `ffplay`.
+
 ### Environment variables
 
 | Variable | Effect |
@@ -174,7 +191,7 @@ Above about 2,200 sprites per screen, frame time grows linearly with the sprite 
 | `crates/game` | Scenes, input model, dice physics, 3D meshes, save format, bitmap font. No platform dependencies. |
 | `crates/render` | OpenGL renderer for shapes, sprites, TrueType text and lit 3D meshes: GL 3.3 on macOS, GLES 3.0 on the device. |
 | `crates/app` | Windows, input, audio, mic, saves, crash log, debug mode, and the device-only sysfs and evdev code. |
-| `scripts` | Cross-compile, sysroot, deploy, install and debug scripts, and the on-device run script. |
+| `scripts` | Cross-compile, sysroot, deploy, install, debug and capture scripts, and the on-device run script. |
 | `assets` | The sprite sheet, the font and its license, and the Ports launcher with its cover art. |
 | `.github/workflows` | The release build. |
 | `docs/screenshots` | The screenshots above. |
