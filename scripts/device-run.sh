@@ -2,7 +2,7 @@
 # Runs on the device: pauses the stock frontend (and its idle auto-sleep) while the game runs.
 # A deploy drops in twinbit.new and touches /tmp/twinbit.restart to relaunch without resuming the frontend.
 # A panic (exit 101) also relaunches; any other exit ends the session.
-# Set CAPTURE=1 to also log every input device and the lid sensor, and DEBUG=1 for remote control.
+# Set CAPTURE=1 to also log every input device and the lid sensor, POWERLOG=1 for battery draw, and DEBUG=1 for remote control.
 cd "$(dirname "$0")"
 . /etc/profile.d/myenv.sh
 front=$(pidof muos2.bin dmenu.bin)
@@ -14,6 +14,14 @@ if [ -n "$CAPTURE" ]; then
   for e in 0 2 4 6; do evtest /dev/input/event$e > ev$e.log 2>&1 & done
   (while :; do echo "$(date +%s) $(cat /sys/class/anbernic_misc/hallkey)"; sleep 0.5; done) > hall.log &
   export TWINBIT_LOG_INPUT=1
+fi
+if [ -n "$POWERLOG" ]; then
+  b=/sys/class/power_supply/battery
+  (while :; do
+    echo "$(date +%s) lid=$(cat /sys/class/anbernic_misc/hallkey) $(cat $b/status) cap=$(cat $b/capacity) uA=$(cat $b/current_now) uV=$(cat $b/voltage_now) soc=$(cat /sys/class/thermal/thermal_zone0/temp) bl=$(cat /sys/class/backlight/*/bl_power | tr '\n' ,)"
+    ps -eo pcpu,args --sort=-pcpu | sed -n '2,5p'
+    sleep 15
+  done) > power.log &
 fi
 [ -n "$DEBUG" ] && export TWINBIT_DEBUG=1
 while :; do
