@@ -48,7 +48,7 @@ Every scene also has these features:
 - A strip on the top screen lights each input while you hold it, plus the lid, the motor and the headphones. A gauge shows the stick position.
 - Each finger on the bottom screen gets a numbered ring, up to 10 at once.
 - Select toggles a performance overlay with FPS, frame times and temperatures.
-- Closing the lid pauses the game and turns both backlights off.
+- Closing the lid pauses the game and turns both backlights off; after 5 minutes closed the device suspends, and opening the lid wakes it.
 - The power button suspends the device, and the game resumes where it left off.
 - Plugging in headphones moves the audio to them.
 - Volume, brightness and the best microgame run persist between launches.
@@ -82,6 +82,7 @@ Build, copy and start on the device:
 ```sh
 scripts/deploy.sh
 CAPTURE=1 scripts/deploy.sh   # also log every input device and the lid sensor
+POWERLOG=1 scripts/deploy.sh  # also log battery draw, temperature and top CPU users to power.log every 15 s
 ssh root@anbernic.local tail -f /userdata/twinbit/run.log
 ```
 
