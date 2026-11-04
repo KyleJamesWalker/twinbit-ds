@@ -21,6 +21,8 @@ const QUIT_HOLD: f32 = 1.0;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 const WAKE_GRACE: Duration = Duration::from_secs(2);
 const STATS_WINDOW: Duration = Duration::from_secs(1);
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+const LID_SLEEP: Duration = Duration::from_secs(5 * 60);
 
 /// Frame timing over the last window, plus sensors read once per window.
 #[derive(Default)]
@@ -41,6 +43,8 @@ struct App {
     device: Option<device::Device>,
     keys: Buttons,
     lid_key: bool,
+    #[cfg(target_os = "linux")]
+    lid_shut: Option<Instant>,
     blow_key: bool,
     cursor: Option<[f32; 2]>,
     mouse_down: bool,
@@ -75,6 +79,8 @@ impl App {
             device: device::Device::open(),
             keys: Buttons::NONE,
             lid_key: false,
+            #[cfg(target_os = "linux")]
+            lid_shut: None,
             blow_key: false,
             cursor: None,
             mouse_down: false,
@@ -194,6 +200,16 @@ impl App {
             && self.device.is_some()
         {
             return self.suspend(None);
+        }
+        #[cfg(target_os = "linux")]
+        if self.device.is_some() {
+            if !input.lid_closed {
+                self.lid_shut = None;
+            } else if self.lid_shut.get_or_insert_with(Instant::now).elapsed() >= LID_SLEEP {
+                self.lid_shut = None;
+                eprintln!("lid: closed {}s, suspending", LID_SLEEP.as_secs());
+                return self.suspend(None);
+            }
         }
         #[cfg(target_os = "linux")]
         if let Some(dev) = &self.device {
