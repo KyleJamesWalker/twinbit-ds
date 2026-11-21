@@ -185,6 +185,10 @@ Measured on the device with the debug perf log, 4x MSAA, both screens at 1024x76
 
 Above about 2,200 sprites per screen, frame time grows linearly with the sprite count.
 
+## Worktrees
+
+Make worktrees under `.claude/worktrees/` and run `scripts/share-target.sh` once in the main checkout: every worktree there then compiles into the main checkout's `target/`, so the dependencies build once instead of once per worktree. The binaries are whichever worktree built last, so the scripts find them through `cargo metadata` (`scripts/lib/target.sh` sets `$bin`) and build and copy them in one go; parallel builds wait on cargo's lock.
+
 ## Layout
 
 | Path | Contents |
